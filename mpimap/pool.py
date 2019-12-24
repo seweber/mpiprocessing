@@ -2,17 +2,19 @@ import os
 import numpy as np
 import pickle
 import mmap
-import cloudpickle # Note that cloudpickle must not import uuid (would create a new child process and causes errors with mpi)
+import cloudpickle # Note that cloudpickle must not import uuid (would create a new child process and cause errors with mpi)
 import subprocess
 import struct
 import socket
 import tempfile
 
 class Pool():
-    def __init__(self, hostfile=None, tmpdir=None, buffersize=5e8):
+    def __init__(self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=5e8):
+        self.processes = processes
         self.hostfile = hostfile
-        self.tmpdir=tmpdir
-        self.buffersize=buffersize
+        self.tmpdir = tmpdir
+        self.pythonenv = pythonenv
+        self.buffersize = buffersize
         
     def __enter__(self):
         # Create temporary directory and paths
@@ -48,24 +50,31 @@ class Pool():
         
         # Setup environment
         my_env = os.environ.copy()
-        my_env["VIRTUAL_ENV"] = "/media/data/home/sebastian/00-python/python3env"
-        my_env["PATH"] = "/media/data/home/sebastian/00-python/python3env/bin:" + my_env["PATH"]
+        if self.pythonenv is not None:
+            my_env["VIRTUAL_ENV"] = self.pythonenv
+            my_env["PATH"] = os.path.join(self.pythonenv,"bin") + ":" + my_env["PATH"]
         my_env["MKL_NUM_THREADS"] = "1"
         my_env["OPENBLAS_NUM_THREADS"] = "1"
         
         # Create mpi command
         master_host = socket.gethostname()
         path_balancer = os.path.join(os.path.dirname(os.path.realpath(__file__)), "balancer.py")
-        cmd_hostfile = []
+        cmd_additions = []
         if self.hostfile is not None:
-            cmd_hostfile = ["--hostfile",  self.hostfile]
+            cmd_additions += ["--hostfile",  self.hostfile]
+        if self.processes is not None:
+            cmd_additions += ["-np", str(self.processes)]
+        if "VIRTUAL_ENV" in my_env:
+            cmd_additions += ["-x", "VIRTUAL_ENV"]
+        if "PATH" in my_env:
+            cmd_additions += ["-x", "PATH"]
         cmd = ["mpiexec",
                #"--fwd-mpirun-port",
                #"--mca", "pmix_base_async_modex", "1",
                #"--mca", "btl", "^openib", 
                #"--mca", "btl_base_warn_component_unused", "0",
                "--mca", "orte_base_help_aggregate", "0",
-               "--mca", "mpi_warn_on_fork", "1"] + cmd_hostfile + ["-x", "PATH", "-x", "MKL_NUM_THREADS", "-x", "OPENBLAS_NUM_THREADS",
+               "--mca", "mpi_warn_on_fork", "1"] + cmd_additions + ["-x", "MKL_NUM_THREADS", "-x", "OPENBLAS_NUM_THREADS",
                "python3", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
 
         # Start MPI, communicate with the master process using mmap
