@@ -13,7 +13,7 @@ A quick and dirty workaround is to simply remove the `import uuid` statement fro
 
 ## Examples
 
-It is used the same as the `map` function of the Python multiprocessing library.
+It is used the same as the `map` and `imap` functions of the Python multiprocessing library.
 ```python
 from mpimap import Pool
 
