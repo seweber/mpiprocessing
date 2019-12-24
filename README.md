@@ -27,7 +27,7 @@ with Pool(hostfile="/PATH/TO/HOSTFILE") as p:
 We can make use of the Python tqdm library, to show a progress bar.
 ```python
 from mpimap import Pool
-from tqdm.notebook import tqdm
+import tqdm # within a Jupyter notebook, call "from tqdm.notebook import tqdm" instead
 
 def fct(idx):
   return idx
