@@ -1,0 +1,26 @@
+matrix:
+  include:
+    - os: linux
+      language: python
+      python: 3.6
+    - os: osx
+      language: generic
+      python: 3
+      osx_image: xcode9.4
+
+addons:
+  apt:
+    update: true
+    packages:
+      - openmpi-bin
+      - libopenmpi-dev
+  homebrew:
+    update: true
+    packages:
+      - openmpi
+
+git:
+  depth: 3
+
+script:
+  - python3 setup.py test
