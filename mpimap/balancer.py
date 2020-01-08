@@ -2,9 +2,9 @@ import time
 from mpi4py import MPI
 import pickle
 import sys
+import os
 
 if __name__ == "__main__":
-    
     # Set MPI environment variables
     status = MPI.Status()
     host = MPI.Get_processor_name()
@@ -25,22 +25,32 @@ if __name__ == "__main__":
     
     host_master, path_lock = sys.argv[1:3]
     if host == host_master:
-        import fcntl
-        with open(path_lock, "w") as fd:
-            try:
-                fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if os.name == 'nt':
+            if rank == 0: # TODO use similar approach as for linux
+                # TODO why does it freeze if we use the same as for linux?
                 rank_master = rank
                 rank_slaves = [r for r in range(0,nProcesses) if r != rank_master]
                 for j in rank_slaves:
-                    comm.isend(obj=rank_master, dest=j, tag=MASTERTAG)
-            except BlockingIOError:
-                rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG, status=status)
-                pass
-            comm.barrier()
+                    comm.send(obj=rank_master, dest=j)
+            else:
+                rank_master = comm.recv(source=0)
+        else:
+            import fcntl
+            with open(path_lock, "w") as fd:
+                try:
+                    fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    rank_master = rank
+                    rank_slaves = [r for r in range(0,nProcesses) if r != rank_master]
+                    for j in rank_slaves:
+                        comm.isend(obj=rank_master, dest=j, tag=MASTERTAG)
+                except BlockingIOError:
+                    rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG, status=status)
+                    pass
+                comm.barrier()
     else:
         rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG, status=status)
         comm.barrier()
-    
+
     if rank_master == rank:
         
         ######################################################################
@@ -69,24 +79,31 @@ if __name__ == "__main__":
         
         # Get paths
         path_flags, path_work, path_worker, path_result = sys.argv[3:]
-        
+
         # Open memory maps
         f_flags = open(path_flags, "r+b")
-        mm_flags = mmap.mmap(f_flags.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ|mmap.PROT_WRITE)
         f_work = open(path_work, "rb")
-        mm_work = mmap.mmap(f_work.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
         f_worker = open(path_worker, "rb")
-        mm_worker = mmap.mmap(f_worker.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
         f_result = open(path_result, "r+b")
-        mm_result = mmap.mmap(f_result.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
         
+        if os.name == 'nt':
+            mm_flags = mmap.mmap(f_flags.fileno(), 0, access=mmap.ACCESS_READ|mmap.ACCESS_WRITE)
+            mm_work = mmap.mmap(f_work.fileno(), 0, access=mmap.ACCESS_READ)
+            mm_worker = mmap.mmap(f_worker.fileno(), 0, access=mmap.ACCESS_READ)
+            mm_result = mmap.mmap(f_result.fileno(), 0, access=mmap.ACCESS_WRITE)
+        else:
+            mm_flags = mmap.mmap(f_flags.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ|mmap.PROT_WRITE)
+            mm_work = mmap.mmap(f_work.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
+            mm_worker = mmap.mmap(f_worker.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
+            mm_result = mmap.mmap(f_result.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
+
         # Get worker
         waitflag(1)
         mm_worker.seek(0)
         is_imap = struct.unpack("?",mm_worker.read(1))[0]
         sz = struct.unpack("L",mm_worker.read(8))[0]
         comm.bcast(obj=mm_worker.read(sz), root=rank_master)
-                
+
         # Get work
         waitflag(2)
         mm_work.seek(0)

@@ -3,11 +3,14 @@ platform: x64
 build: script
 
 environment:
-  MINICONDA_ROOT: C:\Miniconda36-x64
+  PYTHON: "C:\\Python36-x64"
 
 install:
-  - call "%MINICONDA_ROOT%\Scripts\activate.bat" root
-  - conda install -y -q pip setuptools
+  - ps: Start-FileDownload 'https://download.microsoft.com/download/2/9/e/29efe9b1-16d7-4912-a229-6734b0c4e235/msmpisdk.msi'
+  - ps: Start-FileDownload 'https://download.microsoft.com/download/2/9/e/29efe9b1-16d7-4912-a229-6734b0c4e235/MSMpiSetup.exe'
+  - msmpisdk.msi /passive
+  - MSMpiSetup.exe -unattend
+  - set PATH=%PYTHON%;%PYTHON%\Scripts;C:\Program Files\Microsoft MPI\Bin;%PATH%
 
 build_script:
   - python setup.py test

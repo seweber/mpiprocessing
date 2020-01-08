@@ -1,7 +1,7 @@
 # MpiMap - A Parallel Map Using MPI
 
 [![Travis Build Status][travis-svg]][travis-link]
-[![AppVeyor Build Status][appveyor-svg]][appveyor-link]
+<!---[![AppVeyor Build Status][appveyor-svg]][appveyor-link]-->
 
 The Python 3 library *mpimap* is a parallel map using mpi. The map is optimized for speed and usage within Jupyter notebooks. It is licensed under the [GPL v3][gpl-link].
 

@@ -40,13 +40,20 @@ class Pool():
                 
         # Open memory maps
         self.f_flags = open(self.path_flags, "r+b")
-        self.mm_flags = mmap.mmap(self.f_flags.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ|mmap.PROT_WRITE)
         self.f_work = open(self.path_work, "r+b")
-        self.mm_work = mmap.mmap(self.f_work.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
         self.f_worker = open(self.path_worker, "r+b")
-        self.mm_worker = mmap.mmap(self.f_worker.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
         self.f_result = open(self.path_result, "rb")
-        self.mm_result = mmap.mmap(self.f_result.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
+
+        if os.name == 'nt':
+            self.mm_flags = mmap.mmap(self.f_flags.fileno(), 0, access=mmap.ACCESS_READ|mmap.ACCESS_WRITE)
+            self.mm_work = mmap.mmap(self.f_work.fileno(), 0, access=mmap.ACCESS_WRITE)
+            self.mm_worker = mmap.mmap(self.f_worker.fileno(), 0, access=mmap.ACCESS_WRITE)
+            self.mm_result = mmap.mmap(self.f_result.fileno(), 0, access=mmap.ACCESS_READ)
+        else:
+            self.mm_flags = mmap.mmap(self.f_flags.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ|mmap.PROT_WRITE)
+            self.mm_work = mmap.mmap(self.f_work.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
+            self.mm_worker = mmap.mmap(self.f_worker.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
+            self.mm_result = mmap.mmap(self.f_result.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
         
         # Setup environment
         my_env = os.environ.copy()
@@ -60,22 +67,26 @@ class Pool():
         master_host = socket.gethostname()
         path_balancer = os.path.join(os.path.dirname(os.path.realpath(__file__)), "balancer.py")
         cmd_additions = []
-        if self.hostfile is not None:
-            cmd_additions += ["--hostfile",  self.hostfile]
-        if self.processes is not None:
-            cmd_additions += ["-np", str(self.processes)]
-        if "VIRTUAL_ENV" in my_env:
-            cmd_additions += ["-x", "VIRTUAL_ENV"]
-        if "PATH" in my_env:
-            cmd_additions += ["-x", "PATH"]
-        cmd = ["mpiexec",
-               #"--fwd-mpirun-port",
-               #"--mca", "pmix_base_async_modex", "1",
-               #"--mca", "btl", "^openib", 
-               #"--mca", "btl_base_warn_component_unused", "0",
-               "--mca", "orte_base_help_aggregate", "0",
-               "--mca", "mpi_warn_on_fork", "1"] + cmd_additions + ["-x", "MKL_NUM_THREADS", "-x", "OPENBLAS_NUM_THREADS",
-               "python3", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
+        if os.name == 'nt': # TODO use parameters
+            cmd = ["mpiexec", "python", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
+        else:
+            if self.hostfile is not None:
+                cmd_additions += ["--hostfile",  self.hostfile]
+            if self.processes is not None:
+                cmd_additions += ["-np", str(self.processes)]
+            if "VIRTUAL_ENV" in my_env:
+                cmd_additions += ["-x", "VIRTUAL_ENV"]
+            if "PATH" in my_env:
+                cmd_additions += ["-x", "PATH"]
+            cmd = ["mpiexec",
+                #"--fwd-mpirun-port",
+                #"--mca", "pmix_base_async_modex", "1",
+                #"--mca", "btl", "^openib", 
+                #"--mca", "btl_base_warn_component_unused", "0",
+                "--mca", "orte_base_help_aggregate", "0",
+                "--mca", "mpi_warn_on_fork", "1"
+                ] + cmd_additions + ["-x", "MKL_NUM_THREADS", "-x", "OPENBLAS_NUM_THREADS",
+                "python3", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
 
         # Start MPI, communicate with the master process using mmap
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=my_env)
@@ -126,6 +137,10 @@ class Pool():
         self.mm_work.seek(0)
         pickle.dump(params, self.mm_work)
         self._setflag(2)
+        
+        #for line in iter(self.proc.stdout.readline, b""):
+        #    if line == b"": break
+        #    print(line.decode('utf-8'), end="")
 
         # Receive results
         self._waitflag(3)
