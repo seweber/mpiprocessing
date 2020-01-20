@@ -1,18 +1,19 @@
 # MpiProcessing - A Parallel Map Using MPI
 
 [![Travis Build Status][travis-svg]][travis-link]
-[![AppVeyor Build Status][appveyor-svg]][appveyor-link]
+<!---[![AppVeyor Build Status][appveyor-svg]][appveyor-link]-->
 
-The Python 3 library *mpiprocessing* is a parallel map using mpi. The map is optimized for speed and usage within Jupyter notebooks. It is licensed under the [GPL v3][gpl-link].
+The Python 3 library *mpiprocessing* is a parallel map using MPI. The map is optimized for speed and usage within Jupyter notebooks. The library is tested with Linux and macOS and licensed under the [GPL v3][gpl-link].
 
-It depends on the additional Python libraries
+## Installation
 
-* mpi4py
-* cloudpickle
+The library depends on the additional Python libraries mpi4py and cloudpickle. Currently, we only support manual installation by cloning this repository.
+
+In rare cases, one might want to slightly modify the cloudpickle library to make mpiprocessing work more reliable: On some systems, the import of the uuid library within the cloudpickle library creates a new child process which could cause errors with MPI. A quick and dirty workaround is to remove the `import uuid` statement from `cloudpickle/cloudpickle.py`.
 
 ## Examples
 
-It is applied the same as the `map` and `imap` functions of the Python multiprocessing library.
+The map is applied the same as the `map` and `imap` functions of the Python multiprocessing library.
 ```python
 from mpiprocessing import Pool
 
@@ -34,10 +35,6 @@ def fct(idx):
 with Pool(hostfile="/PATH/TO/HOSTFILE") as p:
     results = list(tqdm(p.imap(fct, range(1000)), total=1000))
 ```
-
-## Bugs
-
-In case you encounter segmentation faults using mpiprocessing, you might slightly modify the cloudpickle library, to make mpiprocessing work more reliable. The cloudpickle library should not import uuid, this would create a new child process and could cause errors with mpi. A quick and dirty workaround is to remove the `import uuid` statement from `cloudpickle/cloudpickle.py`.
 
 [travis-svg]: https://api.travis-ci.com/seweber/mpiprocessing.svg?branch=master
 [travis-link]: https://travis-ci.com/seweber/mpiprocessing
