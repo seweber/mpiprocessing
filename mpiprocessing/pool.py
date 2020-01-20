@@ -1,7 +1,7 @@
 import os
 import pickle
 import mmap
-import cloudpickle # Note that cloudpickle must not import uuid (would create a new child process and cause errors with mpi)
+import cloudpickle # Note that on some systems, cloudpickle must not import uuid (would create a new child process and cause errors with mpi)
 import subprocess
 import struct
 import socket
@@ -66,8 +66,16 @@ class Pool():
         master_host = socket.gethostname()
         path_balancer = os.path.join(os.path.dirname(os.path.realpath(__file__)), "balancer.py")
         cmd_additions = []
-        if os.name == 'nt': # TODO use parameters
-            cmd = ["mpiexec", "python", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
+        if os.name == 'nt':
+            if self.hostfile is not None:
+                cmd_additions += ["/gmachinefile",  self.hostfile]
+            if self.processes is not None:
+                cmd_additions += ["/np", str(self.processes)]
+            genvlist = [e for e in ["VIRTUAL_ENV", "PATH"] if e in my_env]
+            if len(genvlist):
+                cmd_additions += ["/genvlist", ",".join(genvlist)]
+            cmd = ["mpiexec",]+cmd_additions+["python", path_balancer, master_host, self.path_lock,
+                self.path_flags, self.path_work, self.path_worker, self.path_result]
         else:
             if self.hostfile is not None:
                 cmd_additions += ["--hostfile",  self.hostfile]
@@ -172,4 +180,3 @@ class Pool():
                     yield r
             elif self._isflag(5) or self.proc.poll() is not None:
                 break
-    

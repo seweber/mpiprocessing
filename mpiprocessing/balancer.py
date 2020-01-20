@@ -26,14 +26,15 @@ if __name__ == "__main__":
     host_master, path_lock = sys.argv[1:3]
     if host == host_master:
         if os.name == 'nt':
-            if rank == 0: # TODO use similar approach as for linux
-                # TODO why does it freeze if we use the same as for linux?
+            if rank == 0: # TODO use similar approach as for linux as rank 0 is not necessarily on host_master
                 rank_master = rank
                 rank_slaves = [r for r in range(0,nProcesses) if r != rank_master]
                 for j in rank_slaves:
-                    comm.send(obj=rank_master, dest=j)
+                    comm.isend(obj=rank_master, dest=j, tag=MASTERTAG)
             else:
-                rank_master = comm.recv(source=0)
+                rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG,
+                                        status=status)
+            comm.barrier()
         else:
             import fcntl
             with open(path_lock, "w") as fd:
@@ -44,8 +45,8 @@ if __name__ == "__main__":
                     for j in rank_slaves:
                         comm.isend(obj=rank_master, dest=j, tag=MASTERTAG)
                 except BlockingIOError:
-                    rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG, status=status)
-                    pass
+                    rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG,
+                                            status=status)
                 comm.barrier()
     else:
         rank_master = comm.recv(source=MPI.ANY_SOURCE, tag=MASTERTAG, status=status)
