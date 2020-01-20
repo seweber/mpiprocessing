@@ -1,5 +1,4 @@
 import os
-import numpy as np
 import pickle
 import mmap
 import cloudpickle # Note that cloudpickle must not import uuid (would create a new child process and cause errors with mpi)

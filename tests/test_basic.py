@@ -1,5 +1,5 @@
 import unittest
-from mpimap import Pool
+from mpiprocessing import Pool
 
 class BasicTest(unittest.TestCase):
     def test_pool(self):
