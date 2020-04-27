@@ -8,7 +8,7 @@ import socket
 import tempfile
 
 class Pool():
-    def __init__(self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=5e8):
+    def __init__(self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=int(5e8)):
         self.processes = processes
         self.hostfile = hostfile
         self.tmpdir = tmpdir
