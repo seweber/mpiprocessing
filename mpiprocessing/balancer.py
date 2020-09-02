@@ -98,90 +98,104 @@ if __name__ == "__main__":
             mm_worker = mmap.mmap(f_worker.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_READ)
             mm_result = mmap.mmap(f_result.fileno(), 0, mmap.MAP_SHARED, mmap.PROT_WRITE)
 
-        # Get worker
-        waitflag(1)
-        mm_worker.seek(0)
-        is_imap = struct.unpack("?",mm_worker.read(1))[0]
-        sz = struct.unpack("L",mm_worker.read(8))[0]
-        comm.bcast(obj=mm_worker.read(sz), root=rank_master)
-
-        # Get work
-        waitflag(2)
-        mm_work.seek(0)
-        params = pickle.load(mm_work)
-                
-        # Set variables and buffers
-        params          = list(params)
-        nWork           = len(params)            
-        results         = [None]*nWork
-        worker2idx      = [None]*nProcesses
-     
-        # Helper for saving results
-        def save(result, results, worker2idx, dest, j1):
-            # Save to cache
-            results[worker2idx[dest]] = result
-                    
-            # Save part of results if is_imap
-            if is_imap:
-                j2 = j1
-                for r in results[j1:]:
-                    if r is None: break
-                    j2 += 1
-                if j2 > j1:
-                    mm_result.seek(0)
-                    pickle.dump(results[j1:j2], mm_result)
-                    setflag(3)
-                    results[j1:j2] = [None]*(j2-j1)
-                    j1 = j2
-                    waitflag(4)
+        # Receive work and distribute it
+        while True:            
+            # Get worker
+            waitflag(1)
+            mm_worker.seek(0)
+            is_imap = struct.unpack("?",mm_worker.read(1))[0]
+            sz = struct.unpack("L",mm_worker.read(8))[0]
+            if sz == 0:
+                break
+            comm.bcast(obj=mm_worker.read(sz), root=rank_master)
             
-            return results, j1
-        
-        # Loop over the work
-        nWorking = 0
-        j1 = 0
-        for idx, work in enumerate(params):
-            if idx < len(rank_slaves):
-                # Save which worker will obtain the next input
-                dest = rank_slaves[idx]
-                nWorking += 1
+            # Get work
+            waitflag(2)
+            mm_work.seek(0)
+            params = pickle.load(mm_work)
+                    
+            # Set variables and buffers
+            params          = list(params)
+            nWork           = len(params)            
+            results         = [None]*nWork
+            calculated      = [False]*nWork
+            worker2idx      = [None]*nProcesses
+                    
+            # Helper for saving results
+            def save(result, results, calculated, worker2idx, dest, j1):
+                # Save to cache
+                results[worker2idx[dest]] = result
+                calculated[worker2idx[dest]] = True
+                        
+                # Save part of results if is_imap
+                if is_imap:
+                    j2 = j1
+                    for c in calculated[j1:]:
+                        if c is False: break
+                        j2 += 1
+                    if j2 > j1:
+                        mm_result.seek(0)
+                        pickle.dump(results[j1:j2], mm_result)
+                        setflag(3)
+                        
+                        # Override entries with None to free up memory
+                        results[j1:j2] = [None]*(j2-j1)
+                        
+                        j1 = j2
+                        waitflag(4)
                 
-                # Send the input to the worker & save which indices the worker received
-                worker2idx[dest] = idx
-                comm.isend(obj=work, dest=dest, tag=WORKTAG)
-        
-            elif nWorking > 0:
-                # Receive the output from the worker & save which worker has send the output and will obtain the next input
-                result, dest, tag = receivOutput()
+                return results, calculated, j1
+                        
+            # Loop over the work
+            nWorking = 0
+            j1 = 0
+            for idx, work in enumerate(params):
                 
-                if tag != ERRORTAG:
-                    # Save result
-                    results, j1 = save(result, results, worker2idx, dest, j1)
+                if idx < len(rank_slaves):
+                    # Save which worker will obtain the next input
+                    dest = rank_slaves[idx]
+                    nWorking += 1
                     
                     # Send the input to the worker & save which indices the worker received
                     worker2idx[dest] = idx
                     comm.isend(obj=work, dest=dest, tag=WORKTAG)
+            
                 else:
-                    nWorking -= 1
+                    # Receive the output from the worker & save which worker has send the output and will obtain the next input
+                    result, dest, tag = receivOutput()
+                                            
+                    # Save result
+                    results, calculated, j1 = save(result, results, calculated, worker2idx, dest, j1)
                     
-        # Collect - until now unreceived - results
-        for _ in range(nWorking):
-            result, dest, tag = receivOutput()
-            if tag != ERRORTAG:
+                    # Send the input to the worker & save which indices the worker received
+                    worker2idx[dest] = idx
+                    comm.isend(obj=work, dest=dest, tag=WORKTAG)
+            
+            # Collect - until now unreceived - results
+            for _ in range(nWorking):
+                result, dest, tag = receivOutput()
+                
                 # Save result
-                results, j1 = save(result, results, worker2idx, dest, j1)
-        
-        # Save results if not is_imap
-        if not is_imap:
-            mm_result.seek(0)
-            pickle.dump(results, mm_result)
-            setflag(3)
-        else:
-            setflag(5)
+                results, calculated, j1 = save(result, results, calculated, worker2idx, dest, j1)
+            
+            # Save results if not is_imap
+            if not is_imap:
+                mm_result.seek(0)
+                pickle.dump(results, mm_result)
+                setflag(3)
+            else:
+                setflag(5)
+                        
+            # End all slaves
+            for j in rank_slaves:
+                comm.isend(obj=None, dest=j, tag=DIETAG)
+            
+            # Wait until all data has been transmittet, then reset the flag to zero
+            waitflag(6)
+            setflag(0)
         
         # Terminate all slaves
-        for j in rank_slaves:
-            comm.isend(obj=None, dest=j, tag=DIETAG)
+        comm.bcast(obj=None, root=rank_master)
             
         # Close memory maps
         mm_flags.close()
@@ -201,21 +215,30 @@ if __name__ == "__main__":
         
         from io import BytesIO
         import traceback
-        
-        try:
-            # Get worker
-            workerpickled = BytesIO(comm.bcast(obj=None, root=rank_master))
-            worker = pickle.load(workerpickled)
-            
+                
+        # Receive worker
+        while True:
+            inputdata = comm.bcast(obj=None, root=rank_master)
+            if inputdata is None:
+                break
+            else:
+                workerpickled = BytesIO(inputdata)
+                worker = pickle.load(workerpickled)
+                
             # Receive work and do it
             while True:
-                inputdata = comm.recv(source=rank_master, tag=MPI.ANY_TAG, status=status)
-                if status.Get_tag() == DIETAG:
-                    break
+                try:
+                    while True:
+                        inputdata = comm.recv(source=rank_master, tag=MPI.ANY_TAG, status=status)
+                        if status.Get_tag() == DIETAG:
+                            break
+                        else:
+                            result = worker(inputdata)
+                            comm.send(obj=result, dest=rank_master)
+            
+                except Exception as err:
+                    comm.send(obj=None, dest=rank_master, tag=ERRORTAG)
+                    print("Error on slave with rank {} on {}:\n{}".format(rank, host, traceback.format_exc()), flush=True, file=sys.stderr)
+                
                 else:
-                    result = worker(inputdata)
-                    comm.send(obj=result, dest=rank_master)
-        
-        except Exception as err:
-            comm.send(obj=None, dest=rank_master, tag=ERRORTAG)
-            print("Slave with rank {} on {} terminated with an error:\n{}".format(rank, host, traceback.format_exc()))
+                    break

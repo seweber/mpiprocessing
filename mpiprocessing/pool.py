@@ -6,6 +6,20 @@ import subprocess
 import struct
 import socket
 import tempfile
+import threading
+import sys
+
+class Printer(threading.Thread):
+    def __init__(self, reader, file):
+        threading.Thread.__init__(self)
+        self.reader = reader
+        self.file = file
+        self.daemon = True
+        
+    def run(self):
+        for line in iter(self.reader.readline, b""):
+            if line == b"": break
+            print(line.decode('utf-8'), end="", file=self.file)
 
 class Pool():
     def __init__(self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=int(5e8)):
@@ -91,17 +105,29 @@ class Pool():
                 #"--mca", "btl", "^openib", 
                 #"--mca", "btl_base_warn_component_unused", "0",
                 "--mca", "orte_base_help_aggregate", "0",
-                "--mca", "mpi_warn_on_fork", "1"
+                "--mca", "mpi_warn_on_fork", "0"
                 ] + cmd_additions + ["-x", "MKL_NUM_THREADS", "-x", "OPENBLAS_NUM_THREADS",
                 "python3", path_balancer, master_host, self.path_lock, self.path_flags, self.path_work, self.path_worker, self.path_result]
 
         # Start MPI, communicate with the master process using mmap
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=my_env)
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=my_env)
+        self.thread_stdout = Printer(self.proc.stdout, sys.stdout)
+        self.thread_stderr = Printer(self.proc.stderr, sys.stderr)
+        self.thread_stdout.start()
+        self.thread_stderr.start()
         return self
     
     def __exit__(self, type, value, traceback):
+        # Set zero work to terminate the mpi processes 
+        self.mm_worker.seek(0)
+        dump = b""
+        self.mm_worker.write(struct.pack('?', 0)) # Do not set is_imap
+        self.mm_worker.write(struct.pack('L', len(dump)))
+        self.mm_worker.write(dump)
+        self._setflag(1)
+        
         # Wait until mpiexec finished
-        print(self.proc.communicate()[0].decode('utf-8'), end="")
+        self.proc.wait()
                 
         # Close memory maps
         self.mm_flags.close()
@@ -115,6 +141,10 @@ class Pool():
         
         # Delete temperoary directory
         self.tmp.cleanup()
+        
+        # Wait until the printer thread has finished
+        self.thread_stderr.join()
+        self.thread_stdout.join()
     
     def _setflag(self, flag):
         self.mm_flags.seek(0)
@@ -131,7 +161,7 @@ class Pool():
         string = self.mm_flags.read()
         return int(string.decode()) == flag
 
-    def map(self, worker, params):        
+    def map(self, worker, params):
         # Set worker
         self.mm_worker.seek(0)
         dump = cloudpickle.dumps(worker)
@@ -139,24 +169,20 @@ class Pool():
         self.mm_worker.write(struct.pack('L', len(dump)))
         self.mm_worker.write(dump)
         self._setflag(1)
-
+        
         # Set work
         self.mm_work.seek(0)
         pickle.dump(params, self.mm_work)
         self._setflag(2)
         
-        #for line in iter(self.proc.stdout.readline, b""):
-        #    if line == b"": break
-        #    print(line.decode('utf-8'), end="")
-
         # Receive results
         self._waitflag(3)
         self.mm_result.seek(0)
         results = pickle.load(self.mm_result)
-        
+        self._setflag(6)
         return results
     
-    def imap(self, worker, params):        
+    def imap(self, worker, params): 
         # Set worker
         self.mm_worker.seek(0)
         dump = cloudpickle.dumps(worker)
@@ -169,7 +195,7 @@ class Pool():
         self.mm_work.seek(0)
         pickle.dump(params, self.mm_work)
         self._setflag(2)
-
+                
         # Load and yield part of results
         while True:
             if self._isflag(3):
@@ -179,4 +205,5 @@ class Pool():
                 for r in results:
                     yield r
             elif self._isflag(5) or self.proc.poll() is not None:
+                self._setflag(6)
                 break
