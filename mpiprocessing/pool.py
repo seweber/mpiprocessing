@@ -25,7 +25,9 @@ class Printer(threading.Thread):
 
 
 class Pool:
-    def __init__(self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=int(5e8)):
+    def __init__(
+        self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=int(5e8),
+    ):
         self.processes = processes
         self.hostfile = hostfile
         self.tmpdir = tmpdir
@@ -73,7 +75,9 @@ class Pool:
 
         # Setup environment
         my_env = os.environ.copy()
-        if self.pythonenv is not None:
+        if self.pythonenv is None:
+            my_env["PATH"] = os.path.dirname(sys.executable) + ":" + my_env["PATH"]
+        else:
             my_env["VIRTUAL_ENV"] = self.pythonenv
             my_env["PATH"] = os.path.join(self.pythonenv, "bin") + ":" + my_env["PATH"]
         my_env["MKL_NUM_THREADS"] = "1"
