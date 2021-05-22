@@ -26,7 +26,12 @@ class Printer(threading.Thread):
 
 class Pool:
     def __init__(
-        self, processes=None, hostfile=None, tmpdir=None, pythonenv=None, buffersize=int(5e8),
+        self,
+        processes=None,
+        hostfile=None,
+        tmpdir=None,
+        pythonenv=None,
+        buffersize=int(5e8),
     ):
         self.processes = processes
         self.hostfile = hostfile
@@ -96,7 +101,9 @@ class Pool:
             if len(genvlist):
                 cmd_additions += ["/genvlist", ",".join(genvlist)]
             cmd = (
-                ["mpiexec",]
+                [
+                    "mpiexec",
+                ]
                 + cmd_additions
                 + [
                     "python",
@@ -125,6 +132,9 @@ class Pool:
                     # "--mca", "pmix_base_async_modex", "1",
                     # "--mca", "btl", "^openib",
                     # "--mca", "btl_base_warn_component_unused", "0",
+                    "--mca",
+                    "btl_openib_allow_ib",
+                    "1",
                     "--mca",
                     "orte_base_help_aggregate",
                     "0",

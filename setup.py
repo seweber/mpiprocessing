@@ -23,5 +23,7 @@ setup(
     install_requires=["mpi4py", "cloudpickle", "numpy", "scipy"],
     setup_requires=["pytest-runner", "black"],
     tests_require=["pytest"],
-    cmdclass={"format": BlackCommand,},
+    cmdclass={
+        "format": BlackCommand,
+    },
 )

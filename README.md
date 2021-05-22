@@ -7,9 +7,11 @@ The Python 3 library *mpiprocessing* is a parallel map using MPI. The map is opt
 
 ## Installation
 
-The library depends on the additional Python libraries mpi4py and cloudpickle. Currently, we only support manual installation by cloning this repository.
+The library can be installed from GitHub via pip. 
 
-In rare cases, one might want to slightly modify the cloudpickle library to make mpiprocessing work more reliable: On some systems, the import of the uuid library within the cloudpickle library creates a new child process which could cause errors with MPI. A quick and dirty workaround is to remove the `import uuid` statement from `cloudpickle/cloudpickle.py`.
+```bash
+pip install git+https://github.com/seweber/mpiprocessing.git
+```
 
 ## Examples
 
@@ -27,7 +29,7 @@ with Pool(hostfile="/PATH/TO/HOSTFILE") as p:
 We can make use of the Python tqdm library to show a progress bar.
 ```python
 from mpiprocessing import Pool
-import tqdm # within a Jupyter notebook, call "from tqdm.notebook import tqdm" instead
+from tqdm import tqdm # within a Jupyter notebook, call "from tqdm.notebook import tqdm" instead
 
 def fct(idx):
   return idx
