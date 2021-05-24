@@ -125,6 +125,8 @@ class Pool:
                 cmd_additions += ["-x", "VIRTUAL_ENV"]
             if "PATH" in my_env:
                 cmd_additions += ["-x", "PATH"]
+            if "LD_LIBRARY_PATH" in my_env:
+                cmd_additions += ["-x", "LD_LIBRARY_PATH"]
             cmd = (
                 [
                     "mpiexec",
